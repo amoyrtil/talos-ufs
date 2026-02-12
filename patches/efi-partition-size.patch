@@ -1,0 +1,13 @@
+diff --git a/pkg/machinery/imager/quirks/partitions.go b/pkg/machinery/imager/quirks/partitions.go
+index 4247d80..aa4b258 100644
+--- a/pkg/machinery/imager/quirks/partitions.go
++++ b/pkg/machinery/imager/quirks/partitions.go
+@@ -16,7 +16,7 @@ const (
+ 
+ // GrubEFISize return EFI partition size for GRUB layout.
+ func (p PartitionSizes) GrubEFISize() uint64 {
+-	return 100 * mib
++	return 512 * mib
+ }
+ 
+ // GrubBIOSSize return BIOS GRUB partition size.

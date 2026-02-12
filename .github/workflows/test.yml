@@ -1,0 +1,146 @@
+name: Test Patches
+
+on:
+  pull_request:
+    paths:
+      - 'patches/**'
+      - 'scripts/**'
+      - '.github/workflows/test.yml'
+
+jobs:
+  validate-patches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get latest Talos release tag
+        id: talos-version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST=$(gh api repos/siderolabs/talos/releases \
+            --jq '[.[] | select(.prerelease == false and .draft == false)] | first | .tag_name')
+          echo "version=${LATEST}" >> "$GITHUB_OUTPUT"
+          echo "Testing against Talos ${LATEST}"
+
+      - name: Clone siderolabs/talos
+        run: |
+          git clone --depth 1 --branch "${{ steps.talos-version.outputs.version }}" \
+            https://github.com/siderolabs/talos.git /tmp/talos
+
+      - name: Resolve pkgs version
+        id: resolve-pkgs
+        run: |
+          PKGS_REF=$(grep -E '^PKGS \?=' /tmp/talos/Makefile | sed 's/PKGS ?= //')
+          echo "pkgs_ref=${PKGS_REF}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${PKGS_REF}" =~ -g([0-9a-f]+)$ ]]; then
+            echo "pkgs_commit=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pkgs_commit=${PKGS_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clone siderolabs/pkgs
+        run: |
+          git clone https://github.com/siderolabs/pkgs.git /tmp/pkgs
+          cd /tmp/pkgs
+          git checkout "${{ steps.resolve-pkgs.outputs.pkgs_commit }}"
+
+      - name: Validate kernel config patch
+        run: |
+          git -C /tmp/pkgs apply --3way --check \
+            "${{ github.workspace }}/patches/kernel-config.patch"
+          echo "kernel-config.patch applies cleanly"
+
+      - name: Validate EFI partition size patch
+        run: |
+          git -C /tmp/talos apply --3way --check \
+            "${{ github.workspace }}/patches/efi-partition-size.patch"
+          echo "efi-partition-size.patch applies cleanly"
+
+      - name: Validate apply-patches.sh
+        run: |
+          bash -n scripts/apply-patches.sh
+          echo "apply-patches.sh syntax OK"
+
+      - name: Validate verify-build.sh
+        run: |
+          bash -n scripts/verify-build.sh
+          echo "verify-build.sh syntax OK"
+
+  build-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    needs: validate-patches
+    # Only run kernel build when patch files actually changed
+    if: |
+      contains(github.event.pull_request.title, '[full-test]') ||
+      github.event.pull_request.changed_files > 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if patches changed
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- patches/)
+          if [ -n "${CHANGED}" ]; then
+            echo "patches_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Patches changed: ${CHANGED}"
+          else
+            echo "patches_changed=false" >> "$GITHUB_OUTPUT"
+            echo "No patch changes detected, skipping kernel build"
+          fi
+
+      - name: Get latest Talos release tag
+        if: steps.changes.outputs.patches_changed == 'true'
+        id: talos-version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST=$(gh api repos/siderolabs/talos/releases \
+            --jq '[.[] | select(.prerelease == false and .draft == false)] | first | .tag_name')
+          echo "version=${LATEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pkgs version
+        if: steps.changes.outputs.patches_changed == 'true'
+        id: resolve-pkgs
+        run: |
+          git clone --depth 1 --branch "${{ steps.talos-version.outputs.version }}" \
+            https://github.com/siderolabs/talos.git /tmp/talos
+
+          PKGS_REF=$(grep -E '^PKGS \?=' /tmp/talos/Makefile | sed 's/PKGS ?= //')
+          if [[ "${PKGS_REF}" =~ -g([0-9a-f]+)$ ]]; then
+            echo "pkgs_commit=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pkgs_commit=${PKGS_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clone and patch pkgs
+        if: steps.changes.outputs.patches_changed == 'true'
+        run: |
+          git clone https://github.com/siderolabs/pkgs.git /tmp/pkgs
+          cd /tmp/pkgs
+          git checkout "${{ steps.resolve-pkgs.outputs.pkgs_commit }}"
+          git apply --3way "${{ github.workspace }}/patches/kernel-config.patch"
+
+      - name: Set up Docker Buildx
+        if: steps.changes.outputs.patches_changed == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build kernel (compilation test)
+        if: steps.changes.outputs.patches_changed == 'true'
+        working-directory: /tmp/pkgs
+        run: |
+          docker buildx build \
+            --no-cache \
+            --file=Pkgfile \
+            --platform=linux/amd64 \
+            --target=kernel \
+            --tag=test-kernel:latest \
+            .
+          echo "Kernel build succeeded"

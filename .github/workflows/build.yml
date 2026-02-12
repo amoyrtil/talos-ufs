@@ -1,0 +1,334 @@
+name: Build Talos UFS
+
+on:
+  workflow_dispatch:
+    inputs:
+      talos_version:
+        description: 'Talos version to build (e.g., v1.12.2)'
+        required: true
+        type: string
+
+concurrency:
+  group: build-${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  KERNEL_IMAGE: ghcr.io/${{ github.repository_owner }}/talos-ufs-kernel
+  IMAGER_IMAGE: ghcr.io/${{ github.repository_owner }}/talos-ufs-imager
+  INSTALLER_IMAGE: ghcr.io/${{ github.repository_owner }}/talos-ufs-installer
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      pkgs_ref: ${{ steps.resolve-pkgs.outputs.pkgs_ref }}
+      kernel_image: ${{ steps.meta.outputs.kernel_image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone siderolabs/talos
+        run: |
+          git clone --depth 1 --branch "${{ inputs.talos_version }}" \
+            https://github.com/siderolabs/talos.git /tmp/talos
+
+      - name: Resolve pkgs version from Talos Makefile
+        id: resolve-pkgs
+        run: |
+          PKGS_REF=$(grep -E '^PKGS \?=' /tmp/talos/Makefile | sed 's/PKGS ?= //')
+          echo "pkgs_ref=${PKGS_REF}" >> "$GITHUB_OUTPUT"
+          echo "Resolved pkgs ref: ${PKGS_REF}"
+
+          # Extract git commit hash from describe format (e.g., v1.12.0-32-g4f8efaf -> 4f8efaf)
+          if [[ "${PKGS_REF}" =~ -g([0-9a-f]+)$ ]]; then
+            PKGS_COMMIT="${BASH_REMATCH[1]}"
+            echo "pkgs_commit=${PKGS_COMMIT}" >> "$GITHUB_OUTPUT"
+            echo "Resolved pkgs commit: ${PKGS_COMMIT}"
+          else
+            echo "pkgs_commit=${PKGS_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clone siderolabs/pkgs
+        run: |
+          git clone https://github.com/siderolabs/pkgs.git /tmp/pkgs
+          cd /tmp/pkgs
+          git checkout "${{ steps.resolve-pkgs.outputs.pkgs_commit }}"
+
+      - name: Apply kernel config patch
+        run: |
+          git -C /tmp/pkgs apply --3way "${{ github.workspace }}/patches/kernel-config.patch"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set kernel image tag
+        id: meta
+        run: |
+          TAG="${{ inputs.talos_version }}"
+          echo "kernel_image=${KERNEL_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push kernel
+        working-directory: /tmp/pkgs
+        run: |
+          docker buildx build \
+            --no-cache \
+            --file=Pkgfile \
+            --platform=linux/amd64 \
+            --target=kernel \
+            --tag="${{ steps.meta.outputs.kernel_image }}" \
+            --push \
+            --cache-from type=gha,scope=kernel-${{ hashFiles('patches/kernel-config.patch') }} \
+            --cache-to type=gha,mode=max,scope=kernel-${{ hashFiles('patches/kernel-config.patch') }} \
+            .
+
+  build-talos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    needs: build-kernel
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      imager_image: ${{ steps.meta.outputs.imager_image }}
+      installer_image: ${{ steps.meta.outputs.installer_image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone siderolabs/talos
+        run: |
+          git clone --depth 1 --branch "${{ inputs.talos_version }}" \
+            https://github.com/siderolabs/talos.git /tmp/talos
+
+      - name: Apply EFI partition size patch
+        run: |
+          git -C /tmp/talos apply --3way "${{ github.workspace }}/patches/efi-partition-size.patch"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tags
+        id: meta
+        run: |
+          TAG="${{ inputs.talos_version }}"
+          echo "imager_image=${IMAGER_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "installer_image=${INSTALLER_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push imager
+        working-directory: /tmp/talos
+        run: |
+          make imager \
+            PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
+            PLATFORM=linux/amd64 \
+            REGISTRY=ghcr.io/${{ github.repository_owner }} \
+            PUSH=true \
+            INSTALLER_ARCH=amd64
+
+      - name: Tag and push imager
+        run: |
+          # The Talos build creates images with its own tag scheme.
+          # Re-tag to our naming convention.
+          TALOS_TAG=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep 'imager' | head -1)
+          if [ -n "${TALOS_TAG}" ]; then
+            docker tag "${TALOS_TAG}" "${{ steps.meta.outputs.imager_image }}"
+            docker push "${{ steps.meta.outputs.imager_image }}"
+          fi
+
+      - name: Build and push installer
+        working-directory: /tmp/talos
+        run: |
+          make installer \
+            PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
+            PLATFORM=linux/amd64 \
+            REGISTRY=ghcr.io/${{ github.repository_owner }} \
+            PUSH=true \
+            INSTALLER_ARCH=amd64
+
+      - name: Tag and push installer
+        run: |
+          TALOS_TAG=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep 'installer' | head -1)
+          if [ -n "${TALOS_TAG}" ]; then
+            docker tag "${TALOS_TAG}" "${{ steps.meta.outputs.installer_image }}"
+            docker push "${{ steps.meta.outputs.installer_image }}"
+          fi
+
+  generate-iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build-talos
+    permissions:
+      contents: write
+      packages: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate ISO
+        run: |
+          mkdir -p output
+          docker run --rm --platform linux/amd64 \
+            -v "$(pwd)/output:/out" \
+            --privileged \
+            "${{ needs.build-talos.outputs.imager_image }}" \
+            iso --arch amd64
+
+      - name: Generate checksum
+        run: |
+          cd output
+          sha256sum metal-amd64.iso > metal-amd64.iso.sha256
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.talos_version }}-ufs"
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+
+          gh release create "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Talos Linux ${{ inputs.talos_version }} with UFS Support" \
+            --notes "$(cat <<EOF
+          ## Downloads
+
+          - \`metal-amd64.iso\` - USB boot installation media
+          - \`metal-amd64.iso.sha256\` - SHA256 checksum
+
+          ## Changes from Upstream Talos ${{ inputs.talos_version }}
+
+          - UFS drivers (ufshcd-core, ufshcd-pci) built into kernel
+          - EFI partition size increased to 512MiB (4096-byte sector support)
+
+          ## Container Images
+
+          | Image | Pull Command |
+          |-------|-------------|
+          | Installer | \`ghcr.io/${OWNER}/talos-ufs-installer:${{ inputs.talos_version }}\` |
+          | Imager | \`ghcr.io/${OWNER}/talos-ufs-imager:${{ inputs.talos_version }}\` |
+          | Kernel | \`ghcr.io/${OWNER}/talos-ufs-kernel:${{ inputs.talos_version }}\` |
+
+          ## Installation
+
+          1. Write ISO to USB drive
+          2. Disable Secure Boot on device
+          3. Boot from USB
+          4. Specify the installer in machine config:
+             \`\`\`yaml
+             machine:
+               install:
+                 image: ghcr.io/${OWNER}/talos-ufs-installer:${{ inputs.talos_version }}
+             \`\`\`
+
+          ## Custom ISO Generation
+
+          \`\`\`bash
+          docker run --rm -t -v /dev:/dev --privileged \\
+            ghcr.io/${OWNER}/talos-ufs-imager:${{ inputs.talos_version }} \\
+            metal --system-extension-image <extension-image>
+          \`\`\`
+
+          ## Supported Hardware
+
+          All x86_64 devices with PCI-connected UFS controllers.
+
+          ### Verified
+          - MINISFORUM S100-WLP (Intel Alder Lake-N, PCI ID: 8086:54ff)
+
+          ---
+          Built from upstream Talos ${{ inputs.talos_version }} with pkgs ref \`${{ needs.build-kernel.outputs.pkgs_ref || 'N/A' }}\`.
+          EOF
+          )" \
+            output/metal-amd64.iso \
+            output/metal-amd64.iso.sha256
+
+      - name: Auto-close patch failure issues
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Close any open patch-failure issues for this version
+          ISSUES=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --label "patch-failure" \
+            --state open \
+            --json number,title \
+            --jq '.[].number')
+
+          for ISSUE_NUM in ${ISSUES}; do
+            gh issue close "${ISSUE_NUM}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --comment "Automatically closed: build succeeded for ${{ inputs.talos_version }}."
+          done
+
+  notify-failure:
+    runs-on: ubuntu-latest
+    needs: [build-kernel, build-talos, generate-iso]
+    if: failure()
+    permissions:
+      issues: write
+    steps:
+      - name: Create failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ inputs.talos_version }}"
+          TITLE="Build failed for Talos ${VERSION}"
+
+          # Check if an open issue already exists for this version
+          EXISTING=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --label "patch-failure" \
+            --state open \
+            --search "in:title ${TITLE}" \
+            --json number \
+            --jq 'length')
+
+          if [ "${EXISTING}" -gt 0 ]; then
+            echo "Issue already exists for ${VERSION}, skipping creation."
+            exit 0
+          fi
+
+          gh issue create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${TITLE}" \
+            --label "patch-failure" \
+            --body "$(cat <<EOF
+          The automated build for Talos **${VERSION}** has failed.
+
+          **Workflow run:** ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          This usually means one of:
+          1. A patch failed to apply due to upstream changes
+          2. The kernel build failed
+          3. The Talos imager/installer build failed
+
+          Please check the workflow logs and update the patches if needed.
+          EOF
+          )"

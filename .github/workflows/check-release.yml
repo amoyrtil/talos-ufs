@@ -1,0 +1,54 @@
+name: Check Upstream Release
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Daily at 0:00 UTC (9:00 JST)
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Get latest stable Talos release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the latest stable release (exclude pre-releases)
+          LATEST=$(gh api repos/siderolabs/talos/releases \
+            --jq '[.[] | select(.prerelease == false and .draft == false)] | first | .tag_name')
+
+          echo "latest=${LATEST}" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream Talos release: ${LATEST}"
+
+      - name: Check if UFS build exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.upstream.outputs.latest }}"
+          UFS_TAG="${VERSION}-ufs"
+
+          # Check if a release with this tag already exists
+          if gh release view "${UFS_TAG}" --repo "${GITHUB_REPOSITORY}" &>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${UFS_TAG} already exists. Skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release ${UFS_TAG} not found. Triggering build."
+          fi
+
+      - name: Trigger build
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run build.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --field talos_version="${{ steps.upstream.outputs.latest }}"
+
+          echo "Triggered build for Talos ${{ steps.upstream.outputs.latest }}"
