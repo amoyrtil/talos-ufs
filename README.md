@@ -18,39 +18,25 @@ All x86_64 devices with PCI-connected UFS controllers supported by the Linux `uf
 
 | Device | CPU | UFS | Status |
 |--------|-----|-----|--------|
-| MINISFORUM S100-WLP | Intel N100 (Alder Lake-N) | 256GB UFS 2.1 | Verified |
+| MINISFORUM S100-WLP | Intel N100 (Alder Lake-N) | 256GB UFS 2.1 | ✅ Verified |
 
 We welcome hardware compatibility reports! See [Contributing](#contributing).
 
 ## Quick Start
 
-### 1. Download
+### 1. Download and Boot
 
-Download `metal-amd64.iso` from the [latest release](../../releases/latest).
+Download `metal-amd64.iso` from the [latest release](../../releases/latest), write it to a USB drive, and boot your device with Secure Boot disabled.
 
-### 2. Write to USB
+### 2. Verify UFS Detection
+
+Once the device enters Talos maintenance mode, confirm UFS storage is detected:
 
 ```bash
-# macOS
-sudo dd if=metal-amd64.iso of=/dev/diskX bs=4m status=progress
-
-# Linux
-sudo dd if=metal-amd64.iso of=/dev/sdX bs=4M status=progress
+talosctl get disks --insecure --nodes <IP>
 ```
 
-### 3. Boot and Install
-
-1. Disable Secure Boot in BIOS/UEFI settings
-2. Boot from USB
-3. The device will enter Talos maintenance mode
-4. Verify UFS storage is detected:
-   ```bash
-   talosctl get disks --insecure --nodes <IP>
-   ```
-
-### 4. Configure
-
-Generate machine config and specify the custom installer:
+### 3. Generate and Apply Config
 
 ```bash
 talosctl gen config my-cluster https://<CONTROL_PLANE_IP>:6443
@@ -61,23 +47,18 @@ Edit the generated config to use the UFS installer:
 ```yaml
 machine:
   install:
-    disk: /dev/sda  # UFS device
+    disk: /dev/sda  # Your UFS device
     image: ghcr.io/<owner>/talos-ufs-installer:<version>
 ```
 
-Apply the config:
+Apply and bootstrap:
 
 ```bash
 talosctl apply-config --insecure --nodes <IP> --file controlplane.yaml
+talosctl bootstrap --nodes <IP>  # After reboot
 ```
 
-### 5. Bootstrap
-
-After the node reboots from UFS storage:
-
-```bash
-talosctl bootstrap --nodes <IP>
-```
+For detailed installation steps, see the [Talos Getting Started Guide](https://www.talos.dev/latest/introduction/getting-started/).
 
 ## Container Images
 
