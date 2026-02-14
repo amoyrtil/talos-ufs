@@ -125,9 +125,13 @@ cd /tmp/pkgs
 docker buildx build --no-cache --file=Pkgfile --platform=linux/amd64 \
   --target=kernel --tag=localhost:5005/siderolabs/kernel:custom --push .
 
-# 6. Build imager and installer
+# 6. Build imager, installer-base, and installer
 cd /tmp/talos
 gmake imager \
+  PKG_KERNEL=host.docker.internal:5005/siderolabs/kernel:custom \
+  PLATFORM=linux/amd64 REGISTRY=localhost:5005 PUSH=true INSTALLER_ARCH=amd64
+
+gmake installer-base \
   PKG_KERNEL=host.docker.internal:5005/siderolabs/kernel:custom \
   PLATFORM=linux/amd64 REGISTRY=localhost:5005 PUSH=true INSTALLER_ARCH=amd64
 
