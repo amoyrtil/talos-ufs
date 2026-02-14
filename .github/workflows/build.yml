@@ -146,6 +146,12 @@ jobs:
         run: |
           git -C /tmp/talos apply --3way "${{ github.workspace }}/patches/efi-partition-size.patch"
 
+      - name: Install crane
+        if: steps.check-talos.outputs.exists == 'false'
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | sudo tar -xz -C /usr/local/bin crane
+
       - name: Start local registry
         if: steps.check-talos.outputs.exists == 'false'
         run: |
@@ -193,6 +199,8 @@ jobs:
       - name: Build installer to local registry
         if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
+        env:
+          CRANE_INSECURE: "true"
         run: |
           make installer \
             PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
