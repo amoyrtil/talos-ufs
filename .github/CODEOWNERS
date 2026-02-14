@@ -1,0 +1,12 @@
+# CODEOWNERS — require review approval for changes
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all changes require owner approval
+*                       @amoyrtil
+
+# CI / GitHub Actions workflows
+.github/                @amoyrtil
+
+# Build & patch scripts
+scripts/                @amoyrtil
+patches/                @amoyrtil
