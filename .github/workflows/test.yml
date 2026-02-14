@@ -7,6 +7,9 @@ on:
       - 'scripts/**'
       - '.github/workflows/test.yml'
 
+permissions:
+  contents: read
+
 jobs:
   validate-patches:
     runs-on: ubuntu-latest
