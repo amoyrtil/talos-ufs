@@ -112,38 +112,9 @@ jobs:
     outputs:
       imager_image: ${{ steps.meta.outputs.imager_image }}
       installer_image: ${{ steps.meta.outputs.installer_image }}
-      talos_dirty_tag: ${{ steps.dirty-tag.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Clone siderolabs/talos
-        run: |
-          git clone --depth 1 --branch "${{ inputs.talos_version }}" \
-            https://github.com/siderolabs/talos.git /tmp/talos
-
-      - name: Apply EFI partition size patch
-        run: |
-          git -C /tmp/talos apply --3way "${{ github.workspace }}/patches/efi-partition-size.patch"
-
-      - name: Determine dirty tag
-        id: dirty-tag
-        run: |
-          # Talos appends -dirty when source is modified
-          cd /tmp/talos
-          TAG=$(git describe --tag --always --dirty 2>/dev/null || echo "${{ inputs.talos_version }}-dirty")
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Talos dirty tag: ${TAG}"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set image tags
         id: meta
@@ -164,56 +135,98 @@ jobs:
             echo "Images not found, building."
           fi
 
-      - name: Build and push imager
+      - name: Clone siderolabs/talos
+        if: steps.check-talos.outputs.exists == 'false'
+        run: |
+          git clone --depth 1 --branch "${{ inputs.talos_version }}" \
+            https://github.com/siderolabs/talos.git /tmp/talos
+
+      - name: Apply EFI partition size patch
+        if: steps.check-talos.outputs.exists == 'false'
+        run: |
+          git -C /tmp/talos apply --3way "${{ github.workspace }}/patches/efi-partition-size.patch"
+
+      - name: Start local registry
+        if: steps.check-talos.outputs.exists == 'false'
+        run: |
+          docker run -d -p 5000:5000 --name registry registry:2
+
+      - name: Set up Docker Buildx (with insecure local registry)
+        if: steps.check-talos.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-config-inline: |
+            [registry."localhost:5000"]
+              http = true
+              insecure = true
+          driver-opts: network=host
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build imager to local registry
         if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
         run: |
           make imager \
             PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
             PLATFORM=linux/amd64 \
-            REGISTRY=ghcr.io/${{ github.repository_owner }} \
+            REGISTRY=localhost:5000 \
             PUSH=true \
             INSTALLER_ARCH=amd64
 
-      - name: Build and push installer-base
+      - name: Build installer-base to local registry
         if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
         run: |
           make installer-base \
             PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
             PLATFORM=linux/amd64 \
-            REGISTRY=ghcr.io/${{ github.repository_owner }} \
+            REGISTRY=localhost:5000 \
             PUSH=true \
             INSTALLER_ARCH=amd64
 
-      - name: Build and push installer
+      - name: Build installer to local registry
         if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
         run: |
           make installer \
             PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
             PLATFORM=linux/amd64 \
-            REGISTRY=ghcr.io/${{ github.repository_owner }} \
+            REGISTRY=localhost:5000 \
             PUSH=true \
             INSTALLER_ARCH=amd64
 
-      - name: Re-tag images with project naming
+      - name: Determine local image tag
+        if: steps.check-talos.outputs.exists == 'false'
+        id: local-tag
+        run: |
+          # Talos appends -dirty when source is modified
+          cd /tmp/talos
+          TAG=$(git describe --tag --always --dirty 2>/dev/null || echo "${{ inputs.talos_version }}-dirty")
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Local image tag: ${TAG}"
+
+      - name: Push images to GHCR with project naming
         if: steps.check-talos.outputs.exists == 'false'
         run: |
-          OWNER="${{ github.repository_owner }}"
-          DIRTY_TAG="${{ steps.dirty-tag.outputs.tag }}"
+          LOCAL_TAG="${{ steps.local-tag.outputs.tag }}"
           VERSION="${{ inputs.talos_version }}"
 
           echo "${{ secrets.GITHUB_TOKEN }}" | skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-          echo "Re-tagging imager: ghcr.io/${OWNER}/siderolabs/imager:${DIRTY_TAG} -> ${IMAGER_IMAGE}:${VERSION}"
-          skopeo copy --all \
-            "docker://ghcr.io/${OWNER}/siderolabs/imager:${DIRTY_TAG}" \
+          echo "Copying imager: localhost:5000 -> ${IMAGER_IMAGE}:${VERSION}"
+          skopeo copy --all --src-tls-verify=false \
+            "docker://localhost:5000/siderolabs/imager:${LOCAL_TAG}" \
             "docker://${IMAGER_IMAGE}:${VERSION}"
 
-          echo "Re-tagging installer: ghcr.io/${OWNER}/siderolabs/installer:${DIRTY_TAG} -> ${INSTALLER_IMAGE}:${VERSION}"
-          skopeo copy --all \
-            "docker://ghcr.io/${OWNER}/siderolabs/installer:${DIRTY_TAG}" \
+          echo "Copying installer: localhost:5000 -> ${INSTALLER_IMAGE}:${VERSION}"
+          skopeo copy --all --src-tls-verify=false \
+            "docker://localhost:5000/siderolabs/installer:${LOCAL_TAG}" \
             "docker://${INSTALLER_IMAGE}:${VERSION}"
 
   generate-iso:

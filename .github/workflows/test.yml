@@ -2,10 +2,6 @@ name: Test Patches
 
 on:
   pull_request:
-    paths:
-      - 'patches/**'
-      - 'scripts/**'
-      - '.github/workflows/test.yml'
 
 permissions:
   contents: read

@@ -48,7 +48,7 @@ Edit the generated config to use the UFS installer:
 machine:
   install:
     disk: /dev/sda  # Your UFS device
-    image: ghcr.io/<owner>/talos-ufs-installer:<version>
+    image: ghcr.io/amoyrtil/talos-ufs-installer:<version>
 ```
 
 Apply and bootstrap:
@@ -66,9 +66,9 @@ Each release publishes three container images:
 
 | Image | Purpose |
 |-------|---------|
-| `ghcr.io/<owner>/talos-ufs-installer:<version>` | Installer for machine config |
-| `ghcr.io/<owner>/talos-ufs-imager:<version>` | Generate custom ISOs with system extensions |
-| `ghcr.io/<owner>/talos-ufs-kernel:<version>` | Custom kernel with UFS drivers |
+| `ghcr.io/amoyrtil/talos-ufs-installer:<version>` | Installer for machine config |
+| `ghcr.io/amoyrtil/talos-ufs-imager:<version>` | Generate custom ISOs with system extensions |
+| `ghcr.io/amoyrtil/talos-ufs-kernel:<version>` | Custom kernel with UFS drivers |
 
 ## Custom ISO Generation
 
@@ -76,7 +76,7 @@ Use the published imager to generate ISOs with system extensions:
 
 ```bash
 docker run --rm -t -v /dev:/dev --privileged \
-  ghcr.io/<owner>/talos-ufs-imager:<version> \
+  ghcr.io/amoyrtil/talos-ufs-imager:<version> \
   metal --system-extension-image <extension-image>
 ```
 
@@ -125,9 +125,13 @@ cd /tmp/pkgs
 docker buildx build --no-cache --file=Pkgfile --platform=linux/amd64 \
   --target=kernel --tag=localhost:5005/siderolabs/kernel:custom --push .
 
-# 6. Build imager and installer
+# 6. Build imager, installer-base, and installer
 cd /tmp/talos
 gmake imager \
+  PKG_KERNEL=host.docker.internal:5005/siderolabs/kernel:custom \
+  PLATFORM=linux/amd64 REGISTRY=localhost:5005 PUSH=true INSTALLER_ARCH=amd64
+
+gmake installer-base \
   PKG_KERNEL=host.docker.internal:5005/siderolabs/kernel:custom \
   PLATFORM=linux/amd64 REGISTRY=localhost:5005 PUSH=true INSTALLER_ARCH=amd64
 
