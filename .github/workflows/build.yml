@@ -78,7 +78,19 @@ jobs:
           TAG="${{ inputs.talos_version }}"
           echo "kernel_image=${KERNEL_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Check if kernel image already exists
+        id: check-kernel
+        run: |
+          if skopeo inspect "docker://${{ steps.meta.outputs.kernel_image }}" &>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Kernel image already exists, skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Kernel image not found, building."
+          fi
+
       - name: Build and push kernel
+        if: steps.check-kernel.outputs.exists == 'false'
         working-directory: /tmp/pkgs
         run: |
           docker buildx build \
@@ -140,7 +152,20 @@ jobs:
           echo "imager_image=${IMAGER_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
           echo "installer_image=${INSTALLER_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Check if talos images already exist
+        id: check-talos
+        run: |
+          if skopeo inspect "docker://${IMAGER_IMAGE}:${{ inputs.talos_version }}" &>/dev/null && \
+             skopeo inspect "docker://${INSTALLER_IMAGE}:${{ inputs.talos_version }}" &>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Imager and installer images already exist, skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Images not found, building."
+          fi
+
       - name: Build and push imager
+        if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
         run: |
           make imager \
@@ -151,6 +176,7 @@ jobs:
             INSTALLER_ARCH=amd64
 
       - name: Build and push installer-base
+        if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
         run: |
           make installer-base \
@@ -161,6 +187,7 @@ jobs:
             INSTALLER_ARCH=amd64
 
       - name: Build and push installer
+        if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
         run: |
           make installer \
@@ -171,6 +198,7 @@ jobs:
             INSTALLER_ARCH=amd64
 
       - name: Re-tag images with project naming
+        if: steps.check-talos.outputs.exists == 'false'
         run: |
           OWNER="${{ github.repository_owner }}"
           DIRTY_TAG="${{ steps.dirty-tag.outputs.tag }}"
