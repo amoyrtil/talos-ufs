@@ -114,8 +114,9 @@ docker buildx create --name talos-builder --driver docker-container \
   --driver-opt network=host --config /tmp/buildkitd.toml --use
 
 # 3. Clone repositories
-git clone --branch release-1.12 https://github.com/siderolabs/pkgs.git /tmp/pkgs
-git clone --branch v1.12.2 https://github.com/siderolabs/talos.git /tmp/talos
+git clone --branch <talos-version> https://github.com/siderolabs/talos.git /tmp/talos
+# Resolve pkgs version: grep '^PKGS ?=' /tmp/talos/Makefile
+git clone --branch <pkgs-version> https://github.com/siderolabs/pkgs.git /tmp/pkgs
 
 # 4. Apply patches
 ./scripts/apply-patches.sh /tmp/pkgs /tmp/talos
