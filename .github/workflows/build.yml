@@ -29,7 +29,7 @@ jobs:
       kernel_image: ${{ steps.meta.outputs.kernel_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Clone siderolabs/talos
         run: |
@@ -63,10 +63,10 @@ jobs:
           git -C /tmp/pkgs apply --3way "${{ github.workspace }}/patches/kernel-config.patch"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -114,7 +114,7 @@ jobs:
       installer_image: ${{ steps.meta.outputs.installer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set image tags
         id: meta
@@ -159,7 +159,7 @@ jobs:
 
       - name: Set up Docker Buildx (with insecure local registry)
         if: steps.check-talos.outputs.exists == 'false'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         with:
           buildkitd-config-inline: |
             [registry."localhost:5000"]
@@ -168,7 +168,7 @@ jobs:
           driver-opts: network=host
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -252,10 +252,10 @@ jobs:
       issues: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
