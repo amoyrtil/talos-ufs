@@ -178,6 +178,7 @@ jobs:
         if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
         run: |
+          mkdir -p _out
           make imager \
             PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
             PLATFORM=linux/amd64 \
@@ -189,6 +190,7 @@ jobs:
         if: steps.check-talos.outputs.exists == 'false'
         working-directory: /tmp/talos
         run: |
+          mkdir -p _out
           make installer-base \
             PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
             PLATFORM=linux/amd64 \
@@ -202,6 +204,9 @@ jobs:
         env:
           CRANE_INSECURE: "true"
         run: |
+          # Talos v1.13+ runs imager as host user (--user $(id -u):$(id -g)).
+          # Pre-create _out so the docker volume mount doesn't auto-create it as root.
+          mkdir -p _out
           make installer \
             PKG_KERNEL="${{ needs.build-kernel.outputs.kernel_image }}" \
             PLATFORM=linux/amd64 \

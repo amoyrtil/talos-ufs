@@ -63,6 +63,10 @@ git clone https://github.com/siderolabs/pkgs.git /tmp/pkgs
 make -C /tmp/pkgs kernel PLATFORM=linux/amd64 PUSH=true REGISTRY=localhost:5000 USERNAME=siderolabs
 
 # Build Talos images (in /tmp/talos) — uses INSTALLER_ARCH, PKG_KERNEL, etc.
+# Pre-create _out before `make installer`: Talos v1.13+ runs the imager
+# container with --user $(id -u):$(id -g), so a docker-auto-created _out
+# (owned by root) breaks the installer tarball write.
+mkdir -p /tmp/talos/_out
 # See README.md "Local Build" section for exact make targets and arguments
 ```
 
