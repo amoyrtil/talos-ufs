@@ -128,6 +128,13 @@ docker buildx build --no-cache --file=Pkgfile --platform=linux/amd64 \
 
 # 6. Build imager, installer-base, and installer
 cd /tmp/talos
+
+# Pre-create the artifacts directory. Talos v1.13+ runs the imager container as
+# the host user (--user $(id -u):$(id -g)); if _out is auto-created by the
+# docker volume mount it will be owned by root and the installer build will
+# fail with "permission denied" when writing installer-<arch>.tar.
+mkdir -p _out
+
 gmake imager \
   PKG_KERNEL=host.docker.internal:5005/siderolabs/kernel:custom \
   PLATFORM=linux/amd64 REGISTRY=localhost:5005 PUSH=true INSTALLER_ARCH=amd64
@@ -176,6 +183,10 @@ Docker Buildx may cache kernel build layers. Always use `--no-cache` when buildi
 ### "TLS config specified for non-HTTPS registry"
 
 When using a local HTTP registry, only configure `mirrors` in machine config. Do not add `config.tls.insecureSkipVerify` for HTTP registries.
+
+### `make installer` fails with `open /out/installer-<arch>.tar: permission denied`
+
+Talos v1.13 changed the `image-%` Makefile target to run the imager container with `--user $(id -u):$(id -g)` (instead of `--privileged`). If `_out` does not exist beforehand, Docker auto-creates it as `root` via the volume mount, and the container running as the host user cannot write to it. `mkdir -p _out` in the Talos source directory before invoking `make installer` resolves the issue.
 
 ## How It Works
 
