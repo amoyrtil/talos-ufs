@@ -29,7 +29,7 @@ jobs:
       kernel_image: ${{ steps.meta.outputs.kernel_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Clone siderolabs/talos
         run: |
@@ -114,7 +114,7 @@ jobs:
       installer_image: ${{ steps.meta.outputs.installer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set image tags
         id: meta
@@ -252,7 +252,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Log in to GHCR
         uses: docker/login-action@v4

@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Get latest Talos release tag
         id: talos-version
@@ -79,7 +79,7 @@ jobs:
       github.event.pull_request.changed_files > 0
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
