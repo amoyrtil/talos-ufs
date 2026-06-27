@@ -301,7 +301,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ inputs.talos_version }}-ufs"
-          OWNER="${{ github.repository_owner }}"
 
           gh release create "${TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
@@ -322,9 +321,9 @@ jobs:
           ## Container Images
 
           ```
-          ghcr.io/OWNER_PLACEHOLDER/talos-ufs-installer:VERSION_PLACEHOLDER
-          ghcr.io/OWNER_PLACEHOLDER/talos-ufs-imager:VERSION_PLACEHOLDER
-          ghcr.io/OWNER_PLACEHOLDER/talos-ufs-kernel:VERSION_PLACEHOLDER
+          ghcr.io/${{ github.repository_owner }}/talos-ufs-installer:${{ inputs.talos_version }}
+          ghcr.io/${{ github.repository_owner }}/talos-ufs-imager:${{ inputs.talos_version }}
+          ghcr.io/${{ github.repository_owner }}/talos-ufs-kernel:${{ inputs.talos_version }}
           ```
 
           ## Installation
@@ -336,14 +335,14 @@ jobs:
              ```yaml
              machine:
                install:
-                 image: ghcr.io/OWNER_PLACEHOLDER/talos-ufs-installer:VERSION_PLACEHOLDER
+                 image: ghcr.io/${{ github.repository_owner }}/talos-ufs-installer:${{ inputs.talos_version }}
              ```
 
           ## Custom ISO Generation
 
           ```bash
           docker run --rm -t -v /dev:/dev --privileged \
-            ghcr.io/OWNER_PLACEHOLDER/talos-ufs-imager:VERSION_PLACEHOLDER \
+            ghcr.io/${{ github.repository_owner }}/talos-ufs-imager:${{ inputs.talos_version }} \
             metal --system-extension-image <extension-image>
           ```
 
@@ -357,12 +356,6 @@ jobs:
           )" \
             output/metal-amd64.iso \
             output/metal-amd64.iso.sha256
-
-          # Replace placeholders in release notes
-          gh release edit "${TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --notes "$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json body --jq .body | \
-              sed "s/OWNER_PLACEHOLDER/${OWNER}/g; s/VERSION_PLACEHOLDER/${{ inputs.talos_version }}/g")"
 
       - name: Auto-close patch failure issues
         if: success()
