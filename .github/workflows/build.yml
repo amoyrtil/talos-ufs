@@ -218,9 +218,13 @@ jobs:
         if: steps.check-talos.outputs.exists == 'false'
         id: local-tag
         run: |
-          # Talos appends -dirty when source is modified
+          # Match Talos's own Makefile tag logic (TAG := git describe --tag
+          # --always --dirty --match v[0-9]\*). Without --match, describe can
+          # resolve to a monorepo tag like pkg/machinery/v1.13.5, whose slashes
+          # are an invalid Docker reference and don't match the pushed image.
+          # Talos appends -dirty when source is modified.
           cd /tmp/talos
-          TAG=$(git describe --tag --always --dirty 2>/dev/null || echo "${{ inputs.talos_version }}-dirty")
+          TAG=$(git describe --tag --always --dirty --match 'v[0-9]*' 2>/dev/null || echo "${{ inputs.talos_version }}-dirty")
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Local image tag: ${TAG}"
 
