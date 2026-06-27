@@ -123,9 +123,18 @@ jobs:
           echo "imager_image=${IMAGER_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
           echo "installer_image=${INSTALLER_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Check if talos images already exist
         id: check-talos
         run: |
+          # skopeo reads ~/.docker/config.json, so the GHCR login above lets it
+          # inspect the project's private packages instead of always missing.
           if skopeo inspect "docker://${IMAGER_IMAGE}:${{ inputs.talos_version }}" &>/dev/null && \
              skopeo inspect "docker://${INSTALLER_IMAGE}:${{ inputs.talos_version }}" &>/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -177,13 +186,6 @@ jobs:
               http = true
               insecure = true
           driver-opts: network=host
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build imager to local registry
         if: steps.check-talos.outputs.exists == 'false'
