@@ -9,8 +9,8 @@ on:
         type: string
 
 concurrency:
-  group: build-${{ github.workflow }}
-  cancel-in-progress: true
+  group: build-${{ github.workflow }}-${{ inputs.talos_version }}
+  cancel-in-progress: false
 
 env:
   KERNEL_IMAGE: ghcr.io/${{ github.repository_owner }}/talos-ufs-kernel
@@ -29,7 +29,7 @@ jobs:
       kernel_image: ${{ steps.meta.outputs.kernel_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Clone siderolabs/talos
         run: |
@@ -63,10 +63,10 @@ jobs:
           git -C /tmp/pkgs apply --3way "${{ github.workspace }}/patches/kernel-config.patch"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -114,7 +114,7 @@ jobs:
       installer_image: ${{ steps.meta.outputs.installer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set image tags
         id: meta
@@ -123,9 +123,18 @@ jobs:
           echo "imager_image=${IMAGER_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
           echo "installer_image=${INSTALLER_IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Check if talos images already exist
         id: check-talos
         run: |
+          # skopeo reads ~/.docker/config.json, so the GHCR login above lets it
+          # inspect the project's private packages instead of always missing.
           if skopeo inspect "docker://${IMAGER_IMAGE}:${{ inputs.talos_version }}" &>/dev/null && \
              skopeo inspect "docker://${INSTALLER_IMAGE}:${{ inputs.talos_version }}" &>/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -170,20 +179,13 @@ jobs:
 
       - name: Set up Docker Buildx (with insecure local registry)
         if: steps.check-talos.outputs.exists == 'false'
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
         with:
           buildkitd-config-inline: |
             [registry."localhost:5000"]
               http = true
               insecure = true
           driver-opts: network=host
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build imager to local registry
         if: steps.check-talos.outputs.exists == 'false'
@@ -267,10 +269,10 @@ jobs:
       issues: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -290,12 +292,15 @@ jobs:
           cd output
           sha256sum metal-amd64.iso > metal-amd64.iso.sha256
 
+      - name: Verify UFS drivers in ISO
+        run: |
+          ./scripts/verify-build.sh output/metal-amd64.iso
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ inputs.talos_version }}-ufs"
-          OWNER="${{ github.repository_owner }}"
 
           gh release create "${TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
@@ -316,9 +321,9 @@ jobs:
           ## Container Images
 
           ```
-          ghcr.io/OWNER_PLACEHOLDER/talos-ufs-installer:VERSION_PLACEHOLDER
-          ghcr.io/OWNER_PLACEHOLDER/talos-ufs-imager:VERSION_PLACEHOLDER
-          ghcr.io/OWNER_PLACEHOLDER/talos-ufs-kernel:VERSION_PLACEHOLDER
+          ghcr.io/${{ github.repository_owner }}/talos-ufs-installer:${{ inputs.talos_version }}
+          ghcr.io/${{ github.repository_owner }}/talos-ufs-imager:${{ inputs.talos_version }}
+          ghcr.io/${{ github.repository_owner }}/talos-ufs-kernel:${{ inputs.talos_version }}
           ```
 
           ## Installation
@@ -330,14 +335,14 @@ jobs:
              ```yaml
              machine:
                install:
-                 image: ghcr.io/OWNER_PLACEHOLDER/talos-ufs-installer:VERSION_PLACEHOLDER
+                 image: ghcr.io/${{ github.repository_owner }}/talos-ufs-installer:${{ inputs.talos_version }}
              ```
 
           ## Custom ISO Generation
 
           ```bash
           docker run --rm -t -v /dev:/dev --privileged \
-            ghcr.io/OWNER_PLACEHOLDER/talos-ufs-imager:VERSION_PLACEHOLDER \
+            ghcr.io/${{ github.repository_owner }}/talos-ufs-imager:${{ inputs.talos_version }} \
             metal --system-extension-image <extension-image>
           ```
 
@@ -351,12 +356,6 @@ jobs:
           )" \
             output/metal-amd64.iso \
             output/metal-amd64.iso.sha256
-
-          # Replace placeholders in release notes
-          gh release edit "${TAG}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --notes "$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json body --jq .body | \
-              sed "s/OWNER_PLACEHOLDER/${OWNER}/g; s/VERSION_PLACEHOLDER/${{ inputs.talos_version }}/g")"
 
       - name: Auto-close patch failure issues
         if: success()

@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Get latest Talos release tag
         id: talos-version
@@ -73,13 +73,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     needs: validate-patches
-    # Only run kernel build when patch files actually changed
-    if: |
-      contains(github.event.pull_request.title, '[full-test]') ||
-      github.event.pull_request.changed_files > 0
+    # Full 6h kernel build is opt-in: requires '[full-test]' in the PR title.
+    # The inner "Check if patches changed" step further skips it unless patches/ changed.
+    if: contains(github.event.pull_request.title, '[full-test]')
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
@@ -129,7 +128,7 @@ jobs:
 
       - name: Set up Docker Buildx
         if: steps.changes.outputs.patches_changed == 'true'
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
       - name: Build kernel (compilation test)
         if: steps.changes.outputs.patches_changed == 'true'
