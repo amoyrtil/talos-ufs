@@ -292,6 +292,10 @@ jobs:
           cd output
           sha256sum metal-amd64.iso > metal-amd64.iso.sha256
 
+      - name: Verify UFS drivers in ISO
+        run: |
+          ./scripts/verify-build.sh output/metal-amd64.iso
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
