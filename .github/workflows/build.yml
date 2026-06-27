@@ -148,8 +148,19 @@ jobs:
 
       - name: Install crane
         if: steps.check-talos.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(curl -s https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)
+          # Authenticate the API call: unauthenticated requests from shared
+          # Actions runners hit the 60/hr rate limit and return JSON without
+          # .tag_name, leaving VERSION=null and a 404 download URL.
+          VERSION=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)
+          if [ -z "${VERSION}" ] || [ "${VERSION}" = "null" ]; then
+            echo "Failed to resolve latest crane version" >&2
+            exit 1
+          fi
+          echo "Installing crane ${VERSION}"
           curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | sudo tar -xz -C /usr/local/bin crane
 
       - name: Start local registry
