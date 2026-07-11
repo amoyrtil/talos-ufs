@@ -26,7 +26,7 @@ RESULT=$(docker run --rm --privileged --platform linux/amd64 \
   -v "${ISO_PATH}:/iso:ro" alpine:latest sh -c "
 apk add --no-cache cpio zstd squashfs-tools 2>/dev/null >/dev/null
 mkdir -p /tmp/iso /tmp/work /tmp/sqsh
-mount -o loop,ro /iso /tmp/iso
+mount -t iso9660 -o loop,ro /iso /tmp/iso
 cd /tmp/work
 zstd -dc /tmp/iso/boot/initramfs.xz | cpio -idm 2>/dev/null
 unsquashfs -d /tmp/sqsh rootfs.sqsh 'usr/lib/modules/*/modules.builtin' 2>/dev/null
