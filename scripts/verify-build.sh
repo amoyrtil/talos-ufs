@@ -16,6 +16,10 @@ if [ ! -f "${ISO_PATH}" ]; then
   exit 1
 fi
 
+# Docker requires an absolute path for bind mounts; a relative path is
+# interpreted as a named volume and rejected with "invalid characters".
+ISO_PATH="$(cd "$(dirname "${ISO_PATH}")" && pwd)/$(basename "${ISO_PATH}")"
+
 echo "Verifying UFS drivers in ${ISO_PATH}..."
 
 RESULT=$(docker run --rm --privileged --platform linux/amd64 \
