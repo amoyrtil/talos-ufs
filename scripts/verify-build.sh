@@ -22,13 +22,17 @@ ISO_PATH="$(cd "$(dirname "${ISO_PATH}")" && pwd)/$(basename "${ISO_PATH}")"
 
 echo "Verifying UFS drivers in ${ISO_PATH}..."
 
-RESULT=$(docker run --rm --privileged --platform linux/amd64 \
+RESULT=$(docker run --rm --platform linux/amd64 \
   -v "${ISO_PATH}:/iso:ro" alpine:latest sh -c "
-apk add --no-cache cpio zstd squashfs-tools 2>/dev/null >/dev/null
-mkdir -p /tmp/iso /tmp/work /tmp/sqsh
-mount -t iso9660 -o loop,ro /iso /tmp/iso
+apk add --no-cache xorriso cpio zstd squashfs-tools 2>/dev/null >/dev/null
+mkdir -p /tmp/work /tmp/sqsh
+# Extract the initramfs from the ISO in userspace with xorriso/osirrox.
+# A loop mount would need a host iso9660 kernel module + CAP_SYS_ADMIN,
+# which is unreliable on CI runners; xorriso reads the ISO9660 image
+# directly with no mount, no loop device, and no privileged container.
+osirrox -indev /iso -extract /boot/initramfs.xz /tmp/initramfs.xz 2>/dev/null
 cd /tmp/work
-zstd -dc /tmp/iso/boot/initramfs.xz | cpio -idm 2>/dev/null
+zstd -dc /tmp/initramfs.xz | cpio -idm 2>/dev/null
 unsquashfs -d /tmp/sqsh rootfs.sqsh 'usr/lib/modules/*/modules.builtin' 2>/dev/null
 grep -i ufs /tmp/sqsh/usr/lib/modules/*/modules.builtin || true
 ")
