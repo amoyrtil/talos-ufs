@@ -63,29 +63,69 @@ jobs:
           cd /tmp/pkgs
           git checkout "${{ steps.resolve-pkgs.outputs.pkgs_commit }}"
 
-      - name: Apply kernel config patch
+      - name: Apply kernel config modifications
         run: |
           cd /tmp/pkgs
-          if git apply --3way "${{ github.workspace }}/patches/kernel-config.patch" 2>&1; then
-            echo "Patch applied successfully"
-          else
-            echo "Patch failed, attempting to apply with --reject to see conflicts..."
-            git apply --reject "${{ github.workspace }}/patches/kernel-config.patch" || true
-            # Check if there are any unmerged files
-            if git diff --name-only --diff-filter=U | grep -q .; then
-              echo "ERROR: Patch conflicts detected after merge attempt"
-              echo "Conflicted files:"
-              git diff --name-only --diff-filter=U
-              exit 1
+          CONFIG_FILE="kernel/build/config-amd64"
+          
+          echo "Applying kernel configuration modifications..."
+          
+          # Backup original
+          cp "${CONFIG_FILE}" "${CONFIG_FILE}.orig"
+          
+          # Function to add or replace a config option
+          add_config() {
+            local option=$1
+            local value=$2
+            if grep -q "^${option}=" "${CONFIG_FILE}"; then
+              sed -i "s/^${option}=.*/${option}=${value}/" "${CONFIG_FILE}"
+              echo "Updated: ${option}=${value}"
+            else
+              echo "${option}=${value}" >> "${CONFIG_FILE}"
+              echo "Added: ${option}=${value}"
             fi
-            # If no unmerged files, check for .rej files
-            if find . -name "*.rej" | grep -q .; then
-              echo "ERROR: Patch rejection files created"
-              find . -name "*.rej" -exec echo "  {}" \;
-              exit 1
+          }
+          
+          # Function to remove a config option by commenting it
+          disable_config() {
+            local option=$1
+            if grep -q "^${option}=" "${CONFIG_FILE}"; then
+              sed -i "s/^${option}=/#  ${option} is not set/" "${CONFIG_FILE}"
+              echo "Disabled: ${option}"
             fi
-            echo "Patch applied with some warnings but no critical conflicts"
-          fi
+          }
+          
+          # Apply UFS kernel configurations
+          add_config "CONFIG_SCSI_UFSHCD" "y"
+          add_config "CONFIG_SCSI_UFS_BSG" "y"
+          add_config "CONFIG_SCSI_UFS_HWMON" "y"
+          add_config "CONFIG_SCSI_UFSHCD_PCI" "y"
+          disable_config "CONFIG_SCSI_UFS_DWC_TC_PCI"
+          disable_config "CONFIG_SCSI_UFSHCD_PLATFORM"
+          
+          # Apply DEVFREQ configurations
+          add_config "CONFIG_PM_DEVFREQ" "y"
+          add_config "CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND" "y"
+          disable_config "CONFIG_DEVFREQ_GOV_PERFORMANCE"
+          disable_config "CONFIG_DEVFREQ_GOV_POWERSAVE"
+          disable_config "CONFIG_DEVFREQ_GOV_USERSPACE"
+          disable_config "CONFIG_DEVFREQ_GOV_PASSIVE"
+          disable_config "CONFIG_PM_DEVFREQ_EVENT"
+          
+          # Apply other configurations
+          add_config "CONFIG_PM_OPP" "y"
+          disable_config "CONFIG_DEVFREQ_THERMAL"
+          
+          # Verify changes
+          echo ""
+          echo "Configuration changes applied:"
+          diff -u "${CONFIG_FILE}.orig" "${CONFIG_FILE}" || true
+          
+          # Verify critical configs are set
+          echo ""
+          echo "Verifying critical configurations..."
+          grep -E "^CONFIG_SCSI_UFSHCD=y|^CONFIG_SCSI_UFS_BSG=y|^CONFIG_PM_DEVFREQ=y" "${CONFIG_FILE}" || \
+            { echo "ERROR: Critical configs missing!"; exit 1; }
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
