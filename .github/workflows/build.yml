@@ -105,16 +105,16 @@ jobs:
           }
           
           # Apply UFS kernel configurations
-          add_config "CONFIG_SCSI_UFSHCD" "y"
+          add_config "CONFIG_SCSI_UFSHCD" "m"
           add_config "CONFIG_SCSI_UFS_BSG" "y"
           add_config "CONFIG_SCSI_UFS_HWMON" "y"
-          add_config "CONFIG_SCSI_UFSHCD_PCI" "y"
+          add_config "CONFIG_SCSI_UFSHCD_PCI" "m"
           disable_config "CONFIG_SCSI_UFS_DWC_TC_PCI"
           disable_config "CONFIG_SCSI_UFSHCD_PLATFORM"
           
           # Apply DEVFREQ configurations
           add_config "CONFIG_PM_DEVFREQ" "y"
-          add_config "CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND" "y"
+          add_config "CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND" "m"
           disable_config "CONFIG_DEVFREQ_GOV_PERFORMANCE"
           disable_config "CONFIG_DEVFREQ_GOV_POWERSAVE"
           disable_config "CONFIG_DEVFREQ_GOV_USERSPACE"
@@ -133,8 +133,8 @@ jobs:
           # Verify critical configs are set
           echo ""
           echo "Verifying critical configurations..."
-          grep -E "^CONFIG_SCSI_UFSHCD=y|^CONFIG_SCSI_UFS_BSG=y|^CONFIG_PM_DEVFREQ=y" "${CONFIG_FILE}" || \
-            { echo "ERROR: Critical configs missing!"; exit 1; }
+          grep -E "^CONFIG_SCSI_UFSHCD=m|^CONFIG_SCSI_UFS_BSG=y|^CONFIG_PM_DEVFREQ=y" "${CONFIG_FILE}" || \
+            { echo "ERROR: Critical configs missing/wrong!"; exit 1; }
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
