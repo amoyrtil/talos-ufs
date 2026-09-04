@@ -73,16 +73,25 @@ jobs:
           # Backup original
           cp "${CONFIG_FILE}" "${CONFIG_FILE}.orig"
           
-          # Function to add or replace a config option
+          # Function to add or replace a config option cleanly
           add_config() {
             local option=$1
             local value=$2
+            
+            # 1. If it exists in the active state (CONFIG_XYZ=value), update it
             if grep -q "^${option}=" "${CONFIG_FILE}"; then
               sed -i "s/^${option}=.*/${option}=${value}/" "${CONFIG_FILE}"
-              echo "Updated: ${option}=${value}"
+              echo "Updated active config: ${option}=${value}"
+            
+            # 2. If it exists as a commented disabled state (# CONFIG_XYZ is not set), replace it
+            elif grep -q "^# ${option} is not set" "${CONFIG_FILE}"; then
+              sed -i "s/^# ${option} is not set/${option}=${value}/" "${CONFIG_FILE}"
+              echo "Replaced disabled fallback: ${option}=${value}"
+              
+            # 3. If it doesn't exist anywhere in the file, append it safely
             else
               echo "${option}=${value}" >> "${CONFIG_FILE}"
-              echo "Added: ${option}=${value}"
+              echo "Added new config line: ${option}=${value}"
             fi
           }
           
